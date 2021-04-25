@@ -622,7 +622,7 @@ CMFRC522::StatusCode CMFRC522::PICC_Select(	Uid *uid,			///< Pointer to Uid stru
 				uint8_tsToCopy = maxuint8_ts;
 			}
 			for (count = 0; count < uint8_tsToCopy; count++) {
-				buffer[index++] = uid->uiduint8_t[uidIndex + count];
+				buffer[index++] = uid->uidByte[uidIndex + count];
 			}
 		}
 		// Now that the data has been copied we need to include the 8 bits in CT in currentLevelKnownBits
@@ -709,7 +709,7 @@ CMFRC522::StatusCode CMFRC522::PICC_Select(	Uid *uid,			///< Pointer to Uid stru
 		index			= (buffer[2] == PICC_CMD_CT) ? 3 : 2; // source index in buffer[]
 		uint8_tsToCopy		= (buffer[2] == PICC_CMD_CT) ? 3 : 4;
 		for (count = 0; count < uint8_tsToCopy; count++) {
-			uid->uiduint8_t[uidIndex + count] = buffer[index++];
+			uid->uidByte[uidIndex + count] = buffer[index++];
 		}
 		
 		// Check response SAK (Select Acknowledge)
@@ -807,7 +807,7 @@ CMFRC522::StatusCode CMFRC522::PCD_Authenticate(uint8_t command,		///< PICC_CMD_
 	// The only missed case is the MF1Sxxxx shortcut activation,
 	// but it requires cascade tag (CT) uint8_t, that is not part of uid.
 	for (uint8_t i = 0; i < 4; i++) {				// The last 4 uint8_ts of the UID
-		sendData[8+i] = uid->uiduint8_t[i+uid->size-4];
+		sendData[8+i] = uid->uidByte[i+uid->size-4];
 	}
 	
 	// Start the authentication.
@@ -1291,11 +1291,11 @@ void CMFRC522::PICC_DumpDetailsToSerial(Uid *uid	///< Pointer to Uid struct retu
 	// UID
     std::cout<<"Card UID:";
 	for (uint8_t i = 0; i < uid->size; i++) {
-		if(uid->uiduint8_t[i] < 0x10)
+		if(uid->uidByte[i] < 0x10)
             std::cout<<" 0";
 		else
             std::cout<<" ";
-        std::cout<<uid->uiduint8_t[i]; // TODO : HEX
+        std::cout<<uid->uidByte[i]; // TODO : HEX
 	}
     std::cout<<std::endl;
 	
