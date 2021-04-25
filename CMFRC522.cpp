@@ -1221,7 +1221,7 @@ void CMFRC522::PCD_DumpVersionToSerial() {
 	// Get the CMFRC522 firmware version
 	uint8_t v = PCD_ReadRegister(VersionReg);
 	std::cout<<"Firmware Version: 0x";
-	std::cout<<v; // TODO : Should be in HEX
+	std::cout<<std::hex<<v;
 	// Lookup which version
 	switch(v) {
 		case 0x88: std::cout<<" = (clone)";  break;
@@ -1295,7 +1295,7 @@ void CMFRC522::PICC_DumpDetailsToSerial(Uid *uid	///< Pointer to Uid struct retu
             std::cout<<" 0";
 		else
             std::cout<<" ";
-        std::cout<<uid->uidByte[i]; // TODO : HEX
+        std::cout<<std::hex<<uid->uidByte[i];
 	}
     std::cout<<std::endl;
 	
@@ -1303,7 +1303,7 @@ void CMFRC522::PICC_DumpDetailsToSerial(Uid *uid	///< Pointer to Uid struct retu
     std::cout<<"Card SAK: ";
 	if(uid->sak < 0x10)
 		std::cout<<"0";
-    std::cout<<uid->sak<<std::endl; // TODO HEX
+    std::cout<<std::hex<<uid->sak<<std::endl;
 	
 	// (suggested) PICC type
 	PICC_Type piccType = PICC_GetType(uid->sak);
@@ -1447,7 +1447,7 @@ void CMFRC522::PICC_DumpMifareClassicSectorToSerial(Uid *uid,			///< Pointer to 
                 std::cout<<" 0";
 			else
                 std::cout<<" ";
-            std::cout<<buffer[index]; // TODO  HEX
+            std::cout<<std::hex<<buffer[index];
 			if ((index % 4) == 3) {
                 std::cout<<" ";
 			}
@@ -1492,8 +1492,8 @@ void CMFRC522::PICC_DumpMifareClassicSectorToSerial(Uid *uid,			///< Pointer to 
 		
 		if (group != 3 && (g[group] == 1 || g[group] == 6)) { // Not a sector trailer, a value block
 			int32_t value = (int32_t(buffer[3])<<24) | (int32_t(buffer[2])<<16) | (int32_t(buffer[1])<<8) | int32_t(buffer[0]);
-            std::cout<<" Value=0x"; std::cout<<value; // TODO  HEX
-            std::cout<<" Adr=0x"; std::cout<<buffer[12]; // TODO  HEX
+            std::cout<<" Value=0x"; std::cout<<std::hex<<value;
+            std::cout<<" Adr=0x"; std::cout<<std::hex<<buffer[12];
 		}
 		std::cout<<std::endl;
 	}
@@ -1535,7 +1535,7 @@ void CMFRC522::PICC_DumpMifareUltralightToSerial() {
                     std::cout<<" 0";
 				else
                     std::cout<<" ";
-                std::cout<<buffer[i]; // TODO  HEX
+                std::cout<<std::hex<<buffer[i];
 			}
             std::cout<<std::endl;
 		}
@@ -1622,7 +1622,7 @@ bool CMFRC522::MIFARE_OpenUidBackdoor(bool logErrors) {
 	if (received != 1 || response[0] != 0x0A) {
 		if (logErrors) {
             std::cout<<"Got bad response on backdoor 0x43 command: ";
-            std::cout<<response[0]; // TODO  HEX
+            std::cout<<std::hex<<response[0];
 			std::cout<<" (";
             std::cout<<validBits;
             std::cout<<" valid bits)\r\n";
