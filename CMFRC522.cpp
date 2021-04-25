@@ -41,6 +41,7 @@ CMFRC522::CMFRC522(	uint8_t chipSelectPin,		///< Arduino pin connected to CMFRC5
 				) {
 	_chipSelectPin = chipSelectPin;
 	_resetPowerDownPin = resetPowerDownPin;
+	initSPI();
 } // End constructor
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -55,7 +56,8 @@ void CMFRC522::PCD_WriteRegister(	PCD_Register reg,	///< The register to write t
 									uint8_t value			///< The value to write.
 								) {
     char buf[] = { (char) reg, (char) value };
-    spiWrite(_hSpi, buf, 2);
+    uint32_t  res=spiWrite(_hSpi, buf, 2);
+
 } // End PCD_WriteRegister()
 
 /**
@@ -1803,9 +1805,10 @@ bool CMFRC522::PICC_ReadCardSerial() {
  */
 void CMFRC522::initSPI() {
     uint32_t flags = 0x0;
-    _hSpi = spiOpen(0, 100000, flags);
+    _hSpi = spiOpen(0, 32000, flags);
     if (_hSpi < 0)
         throw std::runtime_error("Spi initialization failed...");
+    else std::cout<<"Problem init"<<std::endl;
 }
 
 

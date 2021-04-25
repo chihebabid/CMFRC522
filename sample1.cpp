@@ -7,7 +7,7 @@
 //============================================================================
 
 #include "CMFRC522.h"
-#include <pigpio.h>
+#include "pigpio.h"
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -22,9 +22,12 @@ int main(int argc, char *argv[]) {
 	}
 	CMFRC522 mfrc522;
     mfrc522.PCD_Init();   // Initiate MFRC522
+    std::cout<<"Initialization success"<<endl;
     while(1) {
-        if (!mfrc522.PICC_IsNewCardPresent()) return; //Nvlle carte
-        if (!mfrc522.PICC_ReadCardSerial()) return; //Lecture OK
+        while (!mfrc522.PICC_IsNewCardPresent());
+        std::cout<<"New card is here..."<<std::endl;
+        while(!mfrc522.PICC_ReadCardSerial()); //Lecture OK
+
         //Show UID on serial monitor
         std::cout << "UID tag :";
         stringstream content("");
@@ -38,7 +41,6 @@ int main(int argc, char *argv[]) {
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(3000));
     }
-	
 	gpioTerminate();
 	return 0;
 }
