@@ -29,12 +29,12 @@ int main(int argc, char *argv[]) {
         std::cout << "UID tag :";
         stringstream content("");
         byte letter;
-        for (byte i = 0; i < mfrc522.uid.size; i++)
+        for (uint8_t i = 0; i < mfrc522.uid.size; i++)
         {
-            std::cout<<mfrc522.uid.uidByte[i] < 0x10 ? " 0" : " ");
-            std::cout<<mfrc522.uid.uidByte[i]; // TODO  HEX
-            content<<mfrc522.uid.uidByte[i] < 0x10 ?" 0" : " ";
-            content<<mfrc522.uid.uidByte[i]; //TODO HEX
+            std::cout<<mfrc522.uid.uidByte[i] << (0x10 ? " 0" : " ");
+            std::cout<<hex<<mfrc522.uid.uidByte[i];
+            content<<mfrc522.uid.uidByte[i] << (0x10 ?" 0" : " ");
+            content<<std::hex<<mfrc522.uid.uidByte[i];
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(3000));
     }
