@@ -22,7 +22,10 @@ int main(int argc, char *argv[]) {
 	}
 	CMFRC522 mfrc522;
     mfrc522.PCD_Init();   // Initiate MFRC522
+    std::this_thread::sleep_for(std::chrono::milliseconds(4));
     std::cout<<"Initialization success"<<endl;
+    mfrc522.PCD_DumpVersionToSerial();
+    //exit(0);
     while(1) {
         while (!mfrc522.PICC_IsNewCardPresent());
         std::cout<<"New card is here..."<<std::endl;

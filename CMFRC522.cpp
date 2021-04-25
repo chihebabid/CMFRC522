@@ -1223,7 +1223,7 @@ void CMFRC522::PCD_DumpVersionToSerial() {
 	// Get the CMFRC522 firmware version
 	uint8_t v = PCD_ReadRegister(VersionReg);
 	std::cout<<"Firmware Version: 0x";
-	std::cout<<std::hex<<v;
+	std::cout<<std::hex<<int(v);
 	// Lookup which version
 	switch(v) {
 		case 0x88: std::cout<<" = (clone)";  break;
@@ -1236,6 +1236,7 @@ void CMFRC522::PCD_DumpVersionToSerial() {
 	// When 0x00 or 0xFF is returned, communication probably failed
 	if ((v == 0x00) || (v == 0xFF))
         std::cout<<"WARNING: Communication failure, is the CMFRC522 properly connected?"<<std::endl;
+	std::cout<<std::endl<<std::flush;
 } // End PCD_DumpVersionToSerial()
 
 /**
