@@ -18,29 +18,27 @@
 /////////////////////////////////////////////////////////////////////////////////////
 #define LOW 0
 #define HIGH 1
+
+
 /**
  * Constructor.
  */
-CMFRC522::CMFRC522(): CMFRC522(0, UINT8_MAX) { // SS is defined in pins_arduino.h, UINT8_MAX means there is no connection from Arduino to CMFRC522's reset and power down input
-} // End constructor
+CMFRC522::CMFRC522(): CMFRC522(UINT8_MAX) { // SS is defined in pins_arduino.h, UINT8_MAX means there is no connection from Arduino to CMFRC522's reset and power down input
+    } // End constructor
+
+
 
 /**
  * Constructor.
  * Prepares the output pins.
  */
 CMFRC522::CMFRC522(	uint8_t resetPowerDownPin	///< Arduino pin connected to CMFRC522's reset and power down input (Pin 6, NRSTPD, active low). If there is no connection from the CPU to NRSTPD, set this to UINT8_MAX. In this case, only soft reset will be used in PCD_Init().
-				): CMFRC522(0, resetPowerDownPin) { // SS is defined in pins_arduino.h
-} // End constructor
-
-/**
- * Constructor.
- * Prepares the output pins.
- */
-CMFRC522::CMFRC522(	uint8_t chipSelectPin,		///< Arduino pin connected to CMFRC522's SPI slave select input (Pin 24, NSS, active low)
-					uint8_t resetPowerDownPin	///< Arduino pin connected to CMFRC522's reset and power down input (Pin 6, NRSTPD, active low). If there is no connection from the CPU to NRSTPD, set this to UINT8_MAX. In this case, only soft reset will be used in PCD_Init().
 				) {
-	_chipSelectPin = chipSelectPin;
-	_resetPowerDownPin = resetPowerDownPin;
+
+	//_resetPowerDownPin = resetPowerDownPin;
+    _resetPowerDownPin=0xFF;
+    gpioSetMode(25,PI_OUTPUT);
+    gpioWrite(25,1);
 	initSPI();
 } // End constructor
 
@@ -55,8 +53,9 @@ CMFRC522::CMFRC522(	uint8_t chipSelectPin,		///< Arduino pin connected to CMFRC5
 void CMFRC522::PCD_WriteRegister(	PCD_Register reg,	///< The register to write to. One of the PCD_Register enums.
 									uint8_t value			///< The value to write.
 								) {
-    char buf[] = { (char) reg, (char) value };
-    uint32_t  res=spiWrite(_hSpi, buf, 2);
+    char buf[2] = { (char) reg, (char) value};
+    spiWrite(_hSpi, buf, 2);
+
 
 } // End PCD_WriteRegister()
 
@@ -68,8 +67,14 @@ void CMFRC522::PCD_WriteRegister(	PCD_Register reg,	///< The register to write t
 									uint8_t count,			///< The number of uint8_ts to write to the register
 									uint8_t *values		///< The values to write. uint8_t array.
 								) {
-    spiWrite(_hSpi, (char *)&reg, 1);
-	spiWrite(_hSpi, (char *)values, count);
+    /*char temp;
+    spiXfer(_hSpi, (char *)&reg,&temp, 1);
+    char t[count];
+	spiXfer(_hSpi, (char *)values,t, count);*/
+    for (uint8_t index = 0; index < count; index++) {
+        spiWrite(_hSpi,(char *)(values+index),1);
+    }
+
 } // End PCD_WriteRegister()
 
 /**
@@ -80,9 +85,15 @@ uint8_t CMFRC522::PCD_ReadRegister(	PCD_Register reg	///< The register to read f
 								) {
     uint8_t value;
     char rxBuf[2];
-    char txBuf[2] = { (char) (0x80 | reg), 0 };
+    char txBuf[2] = { char(0x80 | reg), 0 };
+
     spiXfer(_hSpi, txBuf, rxBuf, 2);
-    value = rxBuf[1];
+
+    /*spiWrite(_hSpi,txBuf,1);
+    spiRead(_hSpi,rxBuf,1);
+    value=rxBuf[0];*/
+    value = uint8_t(rxBuf[1]);
+
     return value;
 } // End PCD_ReadRegister()
 
@@ -91,36 +102,41 @@ uint8_t CMFRC522::PCD_ReadRegister(	PCD_Register reg	///< The register to read f
  * The interface is described in the datasheet section 8.1.2.
  */
 void CMFRC522::PCD_ReadRegister(	PCD_Register reg,	///< The register to read from. One of the PCD_Register enums.
-								uint8_t count,			///< The number of uint8_ts to read
+								size_t count,			///< The number of uint8_ts to read
 								uint8_t *values,		///< uint8_t array to store the values in.
 								uint8_t rxAlign		///< Only bit positions rxAlign..7 in values[0] are updated.
 								) {
-	if (count == 0) {
-		return;
-	}
+    if (count == 0) return;
 	//Serial.print(F("Reading ")); 	Serial.print(count); Serial.println(F(" uint8_ts from register."));
-	uint8_t address = 0x80 | reg;				// MSB == 1 is for reading. LSB is not used in address. Datasheet section 8.1.2.3.
-	uint8_t index = 0;							// Index in values array.
-
+	char address = 0x80 | reg;				// MSB == 1 is for reading. LSB is not used in address. Datasheet section 8.1.2.3.
+	size_t index = 0;							// Index in values array.
 	count--;								// One read is performed outside of the loop
-    spiWrite(_hSpi,(char *)&address,1);// Tell CMFRC522 which address we want to read
+	char temp;
+
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    //spiWrite(_hSpi,(char *)&address,1);// Tell CMFRC522 which address we want to read
+    spiXfer(_hSpi,(char *)(&address),(char *)(&temp),1);
 	if (rxAlign) {		// Only update bit positions rxAlign..7 in values[0]
 		// Create bit mask for bit positions rxAlign..7
 		uint8_t mask = (0xFF << rxAlign) & 0xFF;
 		// Read value and tell that we want to read the same address again.
 		uint8_t value;
-		spiXfer(_hSpi,(char *)&address,(char *)&value,1);
+		int res=spiXfer(_hSpi,(char *)&address,(char *)&value,1);
+
 		// Apply mask to both current value of values[0] and the new data in value.
-		values[0] = (values[0] & ~mask) | (value & mask);
+		*values = (*values & ~mask) | (value & mask);
 		index++;
+
 	}
 
+    //char val[]={address,0};
 	while (index < count) {
-        spiXfer(_hSpi,(char *)&address,(char *)&values[index],1);
+        spiXfer(_hSpi,(char *)(&address),(char *)(values+index),1);
 		index++;
 	}
 	uint8_t v=0;
-    spiXfer(_hSpi,(char *)&v,(char *)&values[index],1);		// Read the final uint8_t. Send 0 to stop reading.
+    spiXfer(_hSpi,(char *)&v,(char *)(values+index),1);
 
 } // End PCD_ReadRegister()
 
@@ -166,7 +182,10 @@ CMFRC522::StatusCode CMFRC522::PCD_CalculateCRC(	uint8_t *data,		///< In: Pointe
 	// TODO check/modify for other architectures than Arduino Uno 16bit
 
 	// Wait for the CRC calculation to complete. Each iteration of the while-loop takes 17.73us.
-	for (uint16_t i = 5000; i > 0; i--) {
+    auto time_t1=std::chrono::high_resolution_clock::now();
+    auto time_t2=std::chrono::high_resolution_clock::now();
+    std::chrono::milliseconds duration;
+	do {
 		// DivIrqReg[7..0] bits are: Set2 reserved reserved MfinActIRq reserved CRCIRq reserved reserved
 		uint8_t n = PCD_ReadRegister(DivIrqReg);
 		if (n & 0x04) {									// CRCIRq bit set - calculation done
@@ -176,10 +195,14 @@ CMFRC522::StatusCode CMFRC522::PCD_CalculateCRC(	uint8_t *data,		///< In: Pointe
 			result[1] = PCD_ReadRegister(CRCResultRegH);
 			return STATUS_OK;
 		}
-	}
+		time_t2=std::chrono::high_resolution_clock::now();
+        duration=std::chrono::duration_cast<std::chrono::milliseconds>(time_t2 - time_t1);
+	} while(duration.count()<=150);
 	// 89ms passed and nothing happend. Communication with the CMFRC522 might be down.
+	std::cout<<"time out"<<std::endl;
 	return STATUS_TIMEOUT;
 } // End PCD_CalculateCRC()
+
 
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -394,18 +417,28 @@ CMFRC522::StatusCode CMFRC522::PCD_CommunicateWithPICC(	uint8_t command,		///< T
 	// In PCD_Init() we set the TAuto flag in TModeReg. This means the timer automatically starts when the PCD stops transmitting.
 	// Each iteration of the do-while-loop takes 17.86μs.
 	// TODO check/modify for other architectures than Arduino Uno 16bit
-	uint16_t i;
-	for (i = 2000; i > 0; i--) {
+	uint32_t i;
+    auto time_t1=std::chrono::high_resolution_clock::now();
+    auto time_t2=std::chrono::high_resolution_clock::now();
+    std::chrono::milliseconds duration;
+	do {
 		uint8_t n = PCD_ReadRegister(ComIrqReg);	// ComIrqReg[7..0] bits are: Set1 TxIRq RxIRq IdleIRq HiAlertIRq LoAlertIRq ErrIRq TimerIRq
+
 		if (n & waitIRq) {					// One of the interrupts that signal success has been set.
+            std::cout<<"sucess..."<<std::endl;
 			break;
 		}
 		if (n & 0x01) {						// Timer interrupt - nothing received in 25ms
+            std::cout<<"N : "<<std::hex<<int(n)<<" "<<std::dec<<int(i)<<std::endl;
+            std::cout<<"Time out..."<<std::endl;
 			return STATUS_TIMEOUT;
 		}
-	}
+        time_t2=std::chrono::high_resolution_clock::now();
+        duration=std::chrono::duration_cast<std::chrono::milliseconds>(time_t2 - time_t1);
+	} while (duration.count()<=40);
 	// 35.7ms and nothing happend. Communication with the CMFRC522 might be down.
-	if (i == 0) {
+	if (duration.count() > 40) {
+        std::cout<<"Time out..."<<std::endl;
 		return STATUS_TIMEOUT;
 	}
 	
@@ -1806,10 +1839,10 @@ bool CMFRC522::PICC_ReadCardSerial() {
  */
 void CMFRC522::initSPI() {
     uint32_t flags = 0x0;
-    _hSpi = spiOpen(0, 32000, flags);
+    _hSpi = spiOpen(0, 4000000, 0);
     if (_hSpi < 0)
         throw std::runtime_error("Spi initialization failed...");
-    else std::cout<<"Problem init"<<std::endl;
+    else std::cout<<"SPI initialization succeeded..."<<std::endl;
 }
 
 
@@ -1857,3 +1890,91 @@ const char *CMFRC522::PICC_GetTypeName(PICC_Type piccType	///< One of the PICC_T
         default:						return "Unknown type";
     }
 } // End PICC_GetTypeName()
+
+
+/**
+ * Performs a self-test of the MFRC522
+ * See 16.1.1 in http://www.nxp.com/documents/data_sheet/MFRC522.pdf
+ *
+ * @return Whether or not the test passed. Or false if no firmware reference is available.
+ */
+bool CMFRC522::PCD_PerformSelfTest() {
+    // This follows directly the steps outlined in 16.1.1
+    // 1. Perform a soft reset.
+    PCD_Reset();
+
+    // 2. Clear the internal buffer by writing 25 bytes of 00h
+    uint8_t ZEROES[25] = {0x00};
+    PCD_WriteRegister(FIFOLevelReg, 0x80);		// flush the FIFO buffer
+    PCD_WriteRegister(FIFODataReg, 25, ZEROES);	// write 25 bytes of 00h to FIFO
+    PCD_WriteRegister(CommandReg, PCD_Mem);		// transfer to internal buffer
+
+    // 3. Enable self-test
+    PCD_WriteRegister(AutoTestReg, 0x09);
+
+    // 4. Write 00h to FIFO buffer
+    PCD_WriteRegister(FIFODataReg, 0x00);
+
+    // 5. Start self-test by issuing the CalcCRC command
+    PCD_WriteRegister(CommandReg, PCD_CalcCRC);
+
+    // 6. Wait for self-test to complete
+    uint8_t n;
+    for (uint8_t i = 0; i < 0xFF; i++) {
+        // The datasheet does not specify exact completion condition except
+        // that FIFO buffer should contain 64 bytes.
+        // While selftest is initiated by CalcCRC command
+        // it behaves differently from normal CRC computation,
+        // so one can't reliably use DivIrqReg to check for completion.
+        // It is reported that some devices does not trigger CRCIRq flag
+        // during selftest.
+        n = PCD_ReadRegister(FIFOLevelReg);
+
+        if (n >= 64) {
+            break;
+        }
+    }
+    PCD_WriteRegister(CommandReg, PCD_Idle);		// Stop calculating CRC for new content in the FIFO.
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    // 7. Read out resulting 64 bytes from the FIFO buffer.
+    uint8_t result[64];
+    PCD_ReadRegister(FIFODataReg, 64, result, 0);
+
+    // Auto self-test done
+    // Reset AutoTestReg register to be 0 again. Required for normal operation.
+    PCD_WriteRegister(AutoTestReg, 0x00);
+
+    // Determine firmware version (see section 9.3.4.8 in spec)
+    uint8_t version = PCD_ReadRegister(VersionReg);
+
+    // Pick the appropriate reference values
+    const uint8_t *reference;
+    switch (version) {
+       /* case 0x88:	// Fudan Semiconductor FM17522 clone
+            reference = FM17522_firmware_reference;
+            break;*/
+        case 0x90:	// Version 0.0
+            reference = MFRC522_firmware_referenceV0_0;
+            break;
+        case 0x91:	// Version 1.0
+            reference = MFRC522_firmware_referenceV1_0;
+            break;
+        case 0x92:	// Version 2.0
+            reference = MFRC522_firmware_referenceV2_0;
+            break;
+        default:	// Unknown version
+            return false; // abort test
+    }
+
+    // Verify that the results match up to our expectations
+    std::cout<<"Test results : "<<std::endl;
+    for (uint8_t i = 0; i < 64; i++) {
+        std::cout<<"Expected : "<<int(reference[i])<<" ; Got: "<<int(result[i])<<std::endl;
+        /*if (result[i] !=reference[i]) {
+            return false;
+        }*/
+    }
+
+    // Test passed; all is good.
+    return true;
+} // End PCD_PerformSelfTest()
