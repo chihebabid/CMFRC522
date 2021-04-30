@@ -86,7 +86,6 @@ uint8_t CMFRC522::PCD_ReadRegister(	PCD_Register reg	///< The register to read f
     uint8_t value;
     char rxBuf[2];
     char txBuf[2] = { char(0x80 | reg), 0 };
-    std::cout<<std::dec<<"register : "<<int(reg)<<std::endl;
     int c=spiXfer(_hSpi, txBuf, rxBuf, 2);
     assert(c==2);
     value = uint8_t(rxBuf[1]);
