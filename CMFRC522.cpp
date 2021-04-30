@@ -13,6 +13,7 @@
 #include <chrono>
 #include <iostream>
 #include <cstring>
+#include <cassert>
 /////////////////////////////////////////////////////////////////////////////////////
 // Functions for setting up the Arduino
 /////////////////////////////////////////////////////////////////////////////////////
@@ -36,7 +37,7 @@ CMFRC522::CMFRC522(	uint8_t resetPowerDownPin	///< Arduino pin connected to CMFR
 				) {
 
 	//_resetPowerDownPin = resetPowerDownPin;
-    _resetPowerDownPin=0xFF;
+    _resetPowerDownPin=resetPowerDownPin;
     gpioSetMode(25,PI_OUTPUT);
     gpioWrite(25,1);
 	initSPI();
@@ -54,9 +55,8 @@ void CMFRC522::PCD_WriteRegister(	PCD_Register reg,	///< The register to write t
 									uint8_t value			///< The value to write.
 								) {
     char buf[2] = { (char) reg, (char) value};
-    spiWrite(_hSpi, buf, 2);
-
-
+    char *p=buf;
+    spiWrite(_hSpi, p, 2);
 } // End PCD_WriteRegister()
 
 /**
@@ -69,11 +69,11 @@ void CMFRC522::PCD_WriteRegister(	PCD_Register reg,	///< The register to write t
 								) {
     /*char temp;
     spiXfer(_hSpi, (char *)&reg,&temp, 1);
-    char t[count];
-	spiXfer(_hSpi, (char *)values,t, count);*/
-    for (uint8_t index = 0; index < count; index++) {
-        spiWrite(_hSpi,(char *)(values+index),1);
-    }
+    char t[count];*/
+    char x=reg;
+    spiWrite(_hSpi,(char *)&x,1);
+	spiWrite(_hSpi, (char *)values, count);
+
 
 } // End PCD_WriteRegister()
 
@@ -86,14 +86,10 @@ uint8_t CMFRC522::PCD_ReadRegister(	PCD_Register reg	///< The register to read f
     uint8_t value;
     char rxBuf[2];
     char txBuf[2] = { char(0x80 | reg), 0 };
-
-    spiXfer(_hSpi, txBuf, rxBuf, 2);
-
-    /*spiWrite(_hSpi,txBuf,1);
-    spiRead(_hSpi,rxBuf,1);
-    value=rxBuf[0];*/
+    std::cout<<std::dec<<"register : "<<int(reg)<<std::endl;
+    int c=spiXfer(_hSpi, txBuf, rxBuf, 2);
+    assert(c==2);
     value = uint8_t(rxBuf[1]);
-
     return value;
 } // End PCD_ReadRegister()
 
@@ -111,19 +107,14 @@ void CMFRC522::PCD_ReadRegister(	PCD_Register reg,	///< The register to read fro
 	char address = 0x80 | reg;				// MSB == 1 is for reading. LSB is not used in address. Datasheet section 8.1.2.3.
 	size_t index = 0;							// Index in values array.
 	count--;								// One read is performed outside of the loop
-	char temp;
-
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    //spiWrite(_hSpi,(char *)&address,1);// Tell CMFRC522 which address we want to read
-    spiXfer(_hSpi,(char *)(&address),(char *)(&temp),1);
+	//spiWrite(_hSpi,(char *)&address,1);// Tell CMFRC522 which address we want to read
+    spiWrite(_hSpi,(char *)(&address),1);
 	if (rxAlign) {		// Only update bit positions rxAlign..7 in values[0]
 		// Create bit mask for bit positions rxAlign..7
 		uint8_t mask = (0xFF << rxAlign) & 0xFF;
 		// Read value and tell that we want to read the same address again.
 		uint8_t value;
-		int res=spiXfer(_hSpi,(char *)&address,(char *)&value,1);
-
+		spiXfer(_hSpi,(char *)&address,(char *)&value,1);
 		// Apply mask to both current value of values[0] and the new data in value.
 		*values = (*values & ~mask) | (value & mask);
 		index++;
@@ -131,10 +122,11 @@ void CMFRC522::PCD_ReadRegister(	PCD_Register reg,	///< The register to read fro
 	}
 
     //char val[]={address,0};
-	while (index < count) {
-        spiXfer(_hSpi,(char *)(&address),(char *)(values+index),1);
+    while (index < count) {
+        spiXfer(_hSpi,(char *)&address,(char *)(values+index),1);
 		index++;
 	}
+
 	uint8_t v=0;
     spiXfer(_hSpi,(char *)&v,(char *)(values+index),1);
 
@@ -197,9 +189,9 @@ CMFRC522::StatusCode CMFRC522::PCD_CalculateCRC(	uint8_t *data,		///< In: Pointe
 		}
 		time_t2=std::chrono::high_resolution_clock::now();
         duration=std::chrono::duration_cast<std::chrono::milliseconds>(time_t2 - time_t1);
-	} while(duration.count()<=150);
+	} while(duration.count()<=90);
 	// 89ms passed and nothing happend. Communication with the CMFRC522 might be down.
-	std::cout<<"time out"<<std::endl;
+
 	return STATUS_TIMEOUT;
 } // End PCD_CalculateCRC()
 
@@ -1839,7 +1831,7 @@ bool CMFRC522::PICC_ReadCardSerial() {
  */
 void CMFRC522::initSPI() {
     uint32_t flags = 0x0;
-    _hSpi = spiOpen(0, 4000000, 0);
+    _hSpi = spiOpen(0, 1000000, 0);
     if (_hSpi < 0)
         throw std::runtime_error("Spi initialization failed...");
     else std::cout<<"SPI initialization succeeded..."<<std::endl;
@@ -1904,7 +1896,9 @@ bool CMFRC522::PCD_PerformSelfTest() {
     PCD_Reset();
 
     // 2. Clear the internal buffer by writing 25 bytes of 00h
-    uint8_t ZEROES[25] = {0x00};
+    uint8_t ZEROES[25] ;
+    for (uint8_t i=0;i<25;i++) ZEROES[i]=0;
+
     PCD_WriteRegister(FIFOLevelReg, 0x80);		// flush the FIFO buffer
     PCD_WriteRegister(FIFODataReg, 25, ZEROES);	// write 25 bytes of 00h to FIFO
     PCD_WriteRegister(CommandReg, PCD_Mem);		// transfer to internal buffer
@@ -1920,6 +1914,7 @@ bool CMFRC522::PCD_PerformSelfTest() {
 
     // 6. Wait for self-test to complete
     uint8_t n;
+    //std::this_thread::sleep_for(std::chrono::milliseconds(5000));
     for (uint8_t i = 0; i < 0xFF; i++) {
         // The datasheet does not specify exact completion condition except
         // that FIFO buffer should contain 64 bytes.
@@ -1929,13 +1924,12 @@ bool CMFRC522::PCD_PerformSelfTest() {
         // It is reported that some devices does not trigger CRCIRq flag
         // during selftest.
         n = PCD_ReadRegister(FIFOLevelReg);
-
         if (n >= 64) {
             break;
         }
     }
     PCD_WriteRegister(CommandReg, PCD_Idle);		// Stop calculating CRC for new content in the FIFO.
-    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
     // 7. Read out resulting 64 bytes from the FIFO buffer.
     uint8_t result[64];
     PCD_ReadRegister(FIFODataReg, 64, result, 0);
