@@ -1,5 +1,5 @@
 # CMFRC522
-Porting of MFRC522 Arduino C++ class to Raspberry Pi based on pigpio library
+A C++ library, based on pigpio library, to use RC522 Rfid reader for Raspberry Pi.
 
 ## Requirements
 Pigpio library
