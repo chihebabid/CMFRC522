@@ -1,5 +1,5 @@
 # CMFRC522
-Porting of MFRC522 Arduino C++ class to Raspberry Pi based on pigpio library
+A C++ class based on pigpio library for Raspberry Pi to use RC522 RFID reader.
 
 ## Requirements
 Pigpio library
@@ -21,5 +21,7 @@ Connecting RC522 module to SPI is pretty easy. You can use
 
 Another pin can be configured instead of GPIO25
 
-## Not yet tested, I've just transformed the code based on pigpio library
-## 
+## DONE
+
+1. Detect the presence of a new card
+2. Read the serial number of a card
