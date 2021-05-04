@@ -255,7 +255,7 @@ public:
 	
 	// Member variables
 	Uid uid;								// Used by PICC_ReadCardSerial().
-	
+	uint8_t _id[16];
 	/////////////////////////////////////////////////////////////////////////////////////
 	// Functions for setting up the Arduino
 	/////////////////////////////////////////////////////////////////////////////////////
@@ -346,19 +346,26 @@ public:
 	/////////////////////////////////////////////////////////////////////////////////////
 	virtual bool PICC_IsNewCardPresent();
 	virtual bool PICC_ReadCardSerial();
-
+    StatusCode isNewCardPresent();
+    StatusCode RC522_Request(uint8_t reqMode, uint8_t* tagType);
+    void RC522_Halt(void);
+    StatusCode RC522_ToCard(uint8_t command, uint8_t* sendData, uint8_t sendLen, uint8_t* backData, uint16_t* backLen);
+    void RC522_CalculateCRC(uint8_t*  pIndata, uint8_t len, uint8_t* pOutData);
+    StatusCode RC522_Anticoll(uint8_t* serNum);
     /////////////////////////////////////////////////////////////////////////////////////
     // Support functions
     /////////////////////////////////////////////////////////////////////////////////////
     static const char *GetStatusCodeName(StatusCode code);
     static const char *PICC_GetTypeName(PICC_Type type);
 
-	
+private:
+    static constexpr uint8_t  MFRC522_MAX_LEN=16;
 protected:
 
-	uint8_t _resetPowerDownPin;	// Arduino pin connected to CMFRC522's reset and power down input (Pin 6, NRSTPD, active low)
+	uint8_t _resetPowerDownPin=UNUSED_PIN;	// Arduino pin connected to CMFRC522's reset and power down input (Pin 6, NRSTPD, active low)
     int32_t _hSpi; // Spi handle
     void initSPI();
+    bool bcm_spi_init();
     StatusCode MIFARE_TwoStepHelper(uint8_t command, uint8_t blockAddr, int32_t data);
 };
 

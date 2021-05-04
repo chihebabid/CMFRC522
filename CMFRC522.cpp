@@ -7,18 +7,17 @@
 
 #include "CMFRC522.h"
 #include "pigpio.h"
-#include <time.h>
+#include "bcm2835.h"
 #include <stdexcept>
 #include <thread>
 #include <chrono>
 #include <iostream>
 #include <cstring>
-#include <unistd.h>
+
 /////////////////////////////////////////////////////////////////////////////////////
 // Functions for setting up the Arduino
 /////////////////////////////////////////////////////////////////////////////////////
-#define LOW 0
-#define HIGH 1
+
 
 
 /**
@@ -38,9 +37,13 @@ CMFRC522::CMFRC522(	uint8_t resetPowerDownPin	///< Arduino pin connected to CMFR
 
 	//_resetPowerDownPin = resetPowerDownPin;
     _resetPowerDownPin=resetPowerDownPin;
+#ifdef PIGPIO
     gpioSetMode(resetPowerDownPin,PI_OUTPUT);
     gpioWrite(resetPowerDownPin,1);
 	initSPI();
+#else
+	bcm_spi_init();
+#endif//PIGPIO
 } // End constructor
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -54,11 +57,14 @@ CMFRC522::CMFRC522(	uint8_t resetPowerDownPin	///< Arduino pin connected to CMFR
 void CMFRC522::PCD_WriteRegister(	PCD_Register reg,	///< The register to write to. One of the PCD_Register enums.
 									uint8_t value			///< The value to write.
 								) {
-    char txBuf[2];
-    txBuf[0]=  reg;
-    txBuf[1]= value;
-    char rxBuf[2];
-    spiXfer(_hSpi, txBuf,rxBuf, 2);
+    char buf[2];
+    buf[0]= reg;
+    buf[1]= value;
+#ifdef PIGPIO
+    spiWrite(_hSpi, buf, 2);
+#else
+    bcm2835_spi_transfern(buf,2);
+#endif//PIGPIO
 } // End PCD_WriteRegister()
 
 /**
@@ -69,11 +75,19 @@ void CMFRC522::PCD_WriteRegister(	PCD_Register reg,	///< The register to write t
 									uint8_t count,			///< The number of uint8_ts to write to the register
 									uint8_t *values		///< The values to write. uint8_t array.
 								) {
+    /*char temp;
+    spiXfer(_hSpi, (char *)&reg,&temp, 1);
+    char t[count];*/
     char buf[1];
     buf[0]=reg;
-    spiXfer(_hSpi,buf,buf,1);
-    char rxBuf[count];
-	spiXfer(_hSpi, (char *)values,rxBuf, count);
+
+#ifdef PIGPIO
+    spiWrite(_hSpi,buf,1);
+	spiWrite(_hSpi, (char *)values, count);
+#else
+    bcm2835_spi_transfern(buf,1);
+    bcm2835_spi_transfern((char *)values, count);
+#endif//PIGPIO
 } // End PCD_WriteRegister()
 
 /**
@@ -82,12 +96,20 @@ void CMFRC522::PCD_WriteRegister(	PCD_Register reg,	///< The register to write t
  */
 uint8_t CMFRC522::PCD_ReadRegister(	PCD_Register reg	///< The register to read from. One of the PCD_Register enums.
 								) {
-    char rxBuf[2];
+
     char txBuf[2];
-    txBuf[0]= 0x80 | reg;
+    txBuf[0]=(reg & 0x7E) | 0x80;
     txBuf[1]= 0;
+#ifdef PIGPIO
+    char rxBuf[2];
     spiXfer(_hSpi, txBuf, rxBuf, 2);
     return rxBuf[1];
+
+#else
+    bcm2835_spi_transfern((char *)txBuf, 2);
+    return txBuf[1];
+#endif//PIGPIO
+
 } // End PCD_ReadRegister()
 
 /**
@@ -103,31 +125,45 @@ void CMFRC522::PCD_ReadRegister(	PCD_Register reg,	///< The register to read fro
 	//Serial.print(F("Reading ")); 	Serial.print(count); Serial.println(F(" uint8_ts from register."));
 	char address = 0x80 | reg;				// MSB == 1 is for reading. LSB is not used in address. Datasheet section 8.1.2.3.
 	size_t index = 0;							// Index in values array.
-	count--;								// One read is performed outside of the loop
-	//spiWrite(_hSpi,(char *)&address,1);// Tell CMFRC522 which address we want to read
-	char txBuf[1];
-	txBuf[0]=address;
-    char rxBuf[1];
-    spiXfer(_hSpi,txBuf,rxBuf,1);
+	count--;							// One read is performed outside of the loop
+    char buf[1]={address};
+#ifdef PIGPIO
+    spiWrite(_hSpi,buf,1);
+#else
+    bcm2835_spi_transfern(buf, 1);
+#endif//PIGPIO
 	if (rxAlign) {		// Only update bit positions rxAlign..7 in values[0]
 		// Create bit mask for bit positions rxAlign..7
 		uint8_t mask = (0xFF << rxAlign) & 0xFF;
 		// Read value and tell that we want to read the same address again.
-		spiXfer(_hSpi,txBuf,rxBuf,1);
+		uint8_t value;
+		spiXfer(_hSpi,(char *)&address,(char *)&value,1);
 		// Apply mask to both current value of values[0] and the new data in value.
-		*values = (*values & ~mask) | (rxBuf[0] & mask);
+		*values = (*values & ~mask) | (value & mask);
 		index++;
+
 	}
 
-    //char val[]={address,0};
-    while (index < count) {
-        spiXfer(_hSpi,txBuf,(char *)(values+index),1);
-		index++;
-	}
+    uint8_t i=index;
+    while (i<count) {
+        values[i]=address;
+        i++;
+    }
 
+        #ifdef PIGPIO
+        spiXfer(_hSpi,(char *)&address,(char *)(values+index),1=count);
+        #else
+        values[index]=address;
+        bcm2835_spi_transfern((char *)(values+index), count);
+        #endif//PIGPIO
 
-    txBuf[0]=0;
-    spiXfer(_hSpi,txBuf,(char *)(values+index),1);
+#ifdef PIGPIO
+    char buf[1]={0};
+    spiXfer(_hSpi,buf,(char *)(values+count),1);
+#else
+    values[index]=0;
+    bcm2835_spi_transfern((char *)(values+count), 1);
+#endif//PIGPIO
 
 } // End PCD_ReadRegister()
 
@@ -214,35 +250,27 @@ void CMFRC522::PCD_Init() {
 		if (gpioRead(_resetPowerDownPin) == LOW) {	// The CMFRC522 chip is in power down mode.
 			gpioSetMode(_resetPowerDownPin, PI_OUTPUT);		// Now set the resetPowerDownPin as digital output.
 			gpioWrite(_resetPowerDownPin, LOW);		// Make sure we have a clean LOW state.
-            //std::this_thread::sleep_for(std::chrono::microseconds(2));	// 8.8.1 Reset timing requirements says about 100ns. Let us be generous: 2μsl
-            usleep(2000);
-            gpioWrite(_resetPowerDownPin, HIGH);		// Exit power down mode. This triggers a hard reset.
+            std::this_thread::sleep_for(std::chrono::microseconds(2));	// 8.8.1 Reset timing requirements says about 100ns. Let us be generous: 2μsl
+			gpioWrite(_resetPowerDownPin, HIGH);		// Exit power down mode. This triggers a hard reset.
 			// Section 8.8.2 in the datasheet says the oscillator start-up time is the start up time of the crystal + 37,74μs. Let us be generous: 50ms.
-            //std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            usleep(50000);
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
 			hardReset = true;
 		}
 	}
 
 	if (!hardReset) { // Perform a soft reset if we haven't triggered a hard reset above.
-	    std::cout<<"soft reset\n";
 		PCD_Reset();
 	}
-	
-	// Reset baud rates
-	PCD_WriteRegister(TxModeReg, 0x00);
-	PCD_WriteRegister(RxModeReg, 0x00);
-	// Reset ModWidthReg
-	PCD_WriteRegister(ModWidthReg, 0x26);
 
-	// When communicating with a PICC we need a timeout if something goes wrong.
+
+		// When communicating with a PICC we need a timeout if something goes wrong.
 	// f_timer = 13.56 MHz / (2*TPreScaler+1) where TPreScaler = [TPrescaler_Hi:TPrescaler_Lo].
 	// TPrescaler_Hi are the four low bits in TModeReg. TPrescaler_Lo is TPrescalerReg.
-	PCD_WriteRegister(TModeReg, 0x80);			// TAuto=1; timer starts automatically at the end of the transmission in all communication modes at all speeds
-	PCD_WriteRegister(TPrescalerReg, 0xA9);		// TPreScaler = TModeReg[3..0]:TPrescalerReg, ie 0x0A9 = 169 => f_timer=40kHz, ie a timer period of 25μs.
-	PCD_WriteRegister(TReloadRegH, 0x03);		// Reload timer with 0x3E8 = 1000, ie 25ms before timeout.
-	PCD_WriteRegister(TReloadRegL, 0xE8);
-	
+	PCD_WriteRegister(TModeReg, 0x8D);			// TAuto=1; timer starts automatically at the end of the transmission in all communication modes at all speeds
+	PCD_WriteRegister(TPrescalerReg, 0x3E);		// TPreScaler = TModeReg[3..0]:TPrescalerReg, ie 0x0A9 = 169 => f_timer=40kHz, ie a timer period of 25μs.
+	PCD_WriteRegister(TReloadRegH, 0x00);		// Reload timer with 0x3E8 = 1000, ie 25ms before timeout.
+	PCD_WriteRegister(TReloadRegL, 0x30);
+    PCD_WriteRegister(RFCfgReg, 0x70);
 	PCD_WriteRegister(TxASKReg, 0x40);		// Default 0x00. Force a 100 % ASK modulation independent of the ModGsPReg register setting
 	PCD_WriteRegister(ModeReg, 0x3D);		// Default 0x3F. Set the preset value for the CRC coprocessor for the CalcCRC command to 0x6363 (ISO 14443-3 part 6.2.4)
 	PCD_AntennaOn();						// Enable the antenna driver pins TX1 and TX2 (they were disabled by the reset)
@@ -272,8 +300,7 @@ void CMFRC522::PCD_Reset() {
 	uint8_t count = 0;
 	do {
 		// Wait for the PowerDown bit in CommandReg to be cleared (max 3x50ms)
-        //std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        usleep(50000);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	} while ((PCD_ReadRegister(CommandReg) & (1 << 4)) && (++count) < 3);
 } // End PCD_Reset()
 
@@ -399,7 +426,8 @@ CMFRC522::StatusCode CMFRC522::PCD_CommunicateWithPICC(	uint8_t command,		///< T
 	uint8_t bitFraming = (rxAlign << 4) + txLastBits;		// RxAlign = BitFramingReg[6..4]. TxLastBits = BitFramingReg[2..0]
 	
 	PCD_WriteRegister(CommandReg, PCD_Idle);			// Stop any active command.
-	PCD_WriteRegister(ComIrqReg, 0x7F);					// Clear all seven interrupt request bits
+    PCD_WriteRegister(ComIEnReg,0xF7);
+	PCD_WriteRegister(ComIrqReg, 0x80);					// Clear all seven interrupt request bits
 	PCD_WriteRegister(FIFOLevelReg, 0x80);				// FlushBuffer = 1, FIFO initialization
 	PCD_WriteRegister(FIFODataReg, sendLen, sendData);	// Write sendData to the FIFO
 	PCD_WriteRegister(BitFramingReg, bitFraming);		// Bit adjustments
@@ -418,14 +446,12 @@ CMFRC522::StatusCode CMFRC522::PCD_CommunicateWithPICC(	uint8_t command,		///< T
     std::chrono::milliseconds duration;
 	do {
 		uint8_t n = PCD_ReadRegister(ComIrqReg);	// ComIrqReg[7..0] bits are: Set1 TxIRq RxIRq IdleIRq HiAlertIRq LoAlertIRq ErrIRq TimerIRq
-
+        //std::cout<<"Le n: "<<std::hex<<int(n)<<std::endl;
 		if (n & waitIRq) {					// One of the interrupts that signal success has been set.
-            std::cout<<"sucess..."<<std::endl;
 			break;
 		}
 		if (n & 0x01) {						// Timer interrupt - nothing received in 25ms
-            std::cout<<"N : "<<std::hex<<int(n)<<" "<<std::dec<<int(i)<<std::endl;
-            std::cout<<"Time out..."<<std::endl;
+
 			return STATUS_TIMEOUT;
 		}
         time_t2=std::chrono::high_resolution_clock::now();
@@ -433,10 +459,9 @@ CMFRC522::StatusCode CMFRC522::PCD_CommunicateWithPICC(	uint8_t command,		///< T
 	} while (duration.count()<=40);
 	// 35.7ms and nothing happend. Communication with the CMFRC522 might be down.
 	if (duration.count() > 40) {
-        std::cout<<"Time out..."<<std::endl;
 		return STATUS_TIMEOUT;
 	}
-	
+    PCD_ClearRegisterBitMask(BitFramingReg, 0x80);
 	// Stop now if any errors except collisions were detected.
 	uint8_t errorRegValue = PCD_ReadRegister(ErrorReg); // ErrorReg[7..0] bits are: WrErr TempErr reserved BufferOvfl CollErr CRCErr ParityErr ProtocolErr
 	if (errorRegValue & 0x13) {	 // BufferOvfl ParityErr ProtocolErr
@@ -1805,13 +1830,6 @@ bool CMFRC522::MIFARE_UnbrickUidSector(bool logErrors) {
 bool CMFRC522::PICC_IsNewCardPresent() {
 	uint8_t bufferATQA[2];
 	uint8_t bufferSize = sizeof(bufferATQA);
-
-	// Reset baud rates
-	PCD_WriteRegister(TxModeReg, 0x00);
-	PCD_WriteRegister(RxModeReg, 0x00);
-	// Reset ModWidthReg
-	PCD_WriteRegister(ModWidthReg, 0x26);
-
 	CMFRC522::StatusCode result = PICC_RequestA(bufferATQA, &bufferSize);
 	return (result == STATUS_OK || result == STATUS_COLLISION);
 } // End PICC_IsNewCardPresent()
@@ -1899,7 +1917,7 @@ bool CMFRC522::PCD_PerformSelfTest() {
     PCD_Reset();
 
     // 2. Clear the internal buffer by writing 25 bytes of 00h
-    uint8_t ZEROES[25]={0x0} ;
+    uint8_t ZEROES[25]={0x0};
     PCD_WriteRegister(FIFOLevelReg, 0x80);		// flush the FIFO buffer
     PCD_WriteRegister(FIFODataReg, 25, ZEROES);	// write 25 bytes of 00h to FIFO
     PCD_WriteRegister(CommandReg, PCD_Mem);		// transfer to internal buffer
@@ -1973,3 +1991,207 @@ bool CMFRC522::PCD_PerformSelfTest() {
     // Test passed; all is good.
     return true;
 } // End PCD_PerformSelfTest()
+
+bool CMFRC522::bcm_spi_init(){
+    if (!bcm2835_init())
+    {
+        printf("failed!. Are you root??\n");
+        return true;
+    }
+    if (!bcm2835_spi_begin())
+    {
+        printf("failed! Are you root??\n");
+        return false;
+    }
+    bcm2835_spi_setBitOrder(BCM2835_SPI_BIT_ORDER_MSBFIRST);      //  default
+    bcm2835_spi_setDataMode(BCM2835_SPI_MODE0);                   // Sets the clock polariy and phase. CPOL = 0, CPHA = 0
+    bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_64 );   // 64 = 3.90625MHz on Rpi2, 6.250MHz on RPI3
+    bcm2835_spi_chipSelect(BCM2835_SPI_CS0);                      //  default
+    bcm2835_spi_setChipSelectPolarity(BCM2835_SPI_CS0, LOW);      //  default
+    return STATUS_OK;
+}
+
+/**
+ * Returns true if a PICC responds to PICC_CMD_REQA.
+ * Only "new" cards in state IDLE are invited. Sleeping cards in state HALT are ignored.
+ *
+ * @return bool
+ */
+
+CMFRC522::StatusCode CMFRC522::isNewCardPresent() {
+    StatusCode status;
+
+    status = RC522_Request(PICC_CMD_REQA, _id);
+    if (status == STATUS_OK) {
+        std::cout<<"yep...."<<std::endl;
+        status = RC522_Anticoll(_id);
+    }
+    RC522_Halt();
+
+    return status;
+}
+
+CMFRC522::StatusCode CMFRC522::RC522_Request(uint8_t reqMode, uint8_t* tagType) {
+    StatusCode status;
+    uint16_t backBits;			//The received data bits
+
+    PCD_WriteRegister(BitFramingReg, 0x07);		//TxLastBists = BitFramingReg[2..0]	???
+
+    tagType[0] = reqMode;
+    status = RC522_ToCard(PCD_Transceive, tagType, 1, tagType, &backBits);
+
+    if ((status != STATUS_OK) || (backBits != 0x10)) {
+        status = STATUS_ERROR;
+        return status;
+    }
+    return status;
+}
+
+void CMFRC522::RC522_Halt(void) {
+    uint16_t unLen;
+    uint8_t buff[4];
+    buff[0] = PICC_CMD_HLTA;
+    buff[1] = 0;
+    RC522_CalculateCRC(buff, 2, &buff[2]);
+    RC522_ToCard(PCD_Transceive, buff, 4, buff, &unLen);
+}
+
+CMFRC522::StatusCode CMFRC522::RC522_ToCard(uint8_t command, uint8_t* sendData, uint8_t sendLen, uint8_t* backData, uint16_t* backLen) {
+
+    StatusCode status = STATUS_ERROR;
+    uint8_t irqEn = 0x00;
+    uint8_t waitIRq = 0x00;
+    uint8_t lastBits;
+
+
+    uint8_t n;
+    uint16_t i;
+
+    switch (command) {
+        case PCD_MFAuthent: {
+            irqEn = 0x12;
+            waitIRq = 0x10;
+            break;
+        }
+        case PCD_Transceive: {
+            irqEn = 0x77;
+            waitIRq = 0x30;
+            break;
+        }
+        default:
+            break;
+    }
+
+    PCD_WriteRegister(CommandReg, PCD_Idle);
+
+    PCD_WriteRegister(ComIEnReg, irqEn | 0x80);
+    PCD_ClearRegisterBitMask(ComIrqReg, 0x80);
+    PCD_SetRegisterBitMask(FIFOLevelReg, 0x80);
+
+    for (i = 0; i < sendLen; i++) {
+        PCD_WriteRegister(FIFODataReg, sendData[i]);
+    }
+
+    //Execute the command
+    PCD_WriteRegister(CommandReg, command);
+    if (command == PCD_Transceive) {
+        PCD_SetRegisterBitMask(BitFramingReg, 0x80);		//StartSend=1,transmission of data starts
+    }
+
+    i = 2000;	//i according to the clock frequency adjustment, the operator M1 card maximum waiting time 25ms???
+    do {
+        //CommIrqReg[7..0]
+        //Set1 TxIRq RxIRq IdleIRq HiAlerIRq LoAlertIRq ErrIRq TimerIRq
+        n = PCD_ReadRegister(ComIrqReg);
+        i--;
+        //std::cout<<"n: "<<std::hex<<int(n)<<" "<<" i: "<<int(i)<<std::endl;
+    } while ((i!=0) && !(n&0x01) && !(n&waitIRq));
+
+    PCD_ClearRegisterBitMask(BitFramingReg, 0x80);			//StartSend=0
+
+    if (i != 0)  {
+        if (!(PCD_ReadRegister(ErrorReg) & 0x13)) {
+            status = STATUS_OK;
+
+            if (command == PCD_Transceive) {
+                n = PCD_ReadRegister(FIFOLevelReg);
+                lastBits = PCD_ReadRegister(ControlReg) & 0x07;
+                if (lastBits) {
+                    *backLen = (n - 1) * 8 + lastBits;
+                } else {
+                    *backLen = n * 8;
+                }
+
+                if (n == 0) {
+                    n = 1;
+                }
+                if (n > MFRC522_MAX_LEN) {
+                    n = MFRC522_MAX_LEN;
+                }
+
+                for (i = 0; i < n; i++) {
+                    backData[i] = PCD_ReadRegister(FIFODataReg);
+                }
+
+            }
+        } else {
+            printf("pb");
+            status = STATUS_ERROR;
+        }
+    }
+    return status;
+}
+
+
+void CMFRC522::RC522_CalculateCRC(uint8_t*  pIndata, uint8_t len, uint8_t* pOutData) {
+    uint8_t i, n;
+
+    PCD_ClearRegisterBitMask(DivIrqReg, 0x04);			//CRCIrq = 0
+    PCD_SetRegisterBitMask(FIFOLevelReg, 0x80);			//Clear the FIFO pointer
+    //Write_MFRC522(CommandReg, PCD_IDLE);
+
+    //Writing data to the FIFO
+   for (i = 0; i < len; i++) {
+        PCD_WriteRegister(FIFODataReg, *(pIndata+i));
+    }
+
+    PCD_WriteRegister(CommandReg, PCD_CalcCRC);
+
+    //Wait CRC calculation is complete
+    i = 0xFF;
+    do {
+        n = PCD_ReadRegister(DivIrqReg);
+        i--;
+    } while ((i!=0) && !(n&0x04));			//CRCIrq = 1
+
+    //Read CRC calculation result
+    pOutData[0] = PCD_ReadRegister(CRCResultRegL);
+    pOutData[1] = PCD_ReadRegister(CRCResultRegH);
+}
+
+
+CMFRC522::StatusCode CMFRC522::RC522_Anticoll(uint8_t* serNum) {
+    StatusCode status;
+    uint8_t i;
+    uint8_t serNumCheck = 0;
+    uint16_t unLen;
+
+    PCD_WriteRegister(BitFramingReg, 0x00);		//TxLastBists = BitFramingReg[2..0]
+
+    serNum[0] = PICC_CMD_SEL_CL1;
+    serNum[1] = 0x20;
+    status = RC522_ToCard(PCD_Transceive, serNum, 2, serNum, &unLen);
+
+    if (status == STATUS_OK) {
+        //Check card serial number
+        for (i = 0; i < 4; i++) {
+            serNumCheck ^= serNum[i];
+        }
+        if (serNumCheck != serNum[i]) {
+            status = STATUS_ERROR;
+        }
+    }
+    return status;
+}
+
+
