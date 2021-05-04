@@ -7,7 +7,6 @@
 
 #include "CMFRC522.h"
 #include "pigpio.h"
-#include "bcm2835.h"
 #include <stdexcept>
 #include <thread>
 #include <chrono>
@@ -37,13 +36,12 @@ CMFRC522::CMFRC522(	uint8_t resetPowerDownPin	///< Arduino pin connected to CMFR
 
 	//_resetPowerDownPin = resetPowerDownPin;
     _resetPowerDownPin=resetPowerDownPin;
-#ifdef PIGPIO
-    gpioSetMode(resetPowerDownPin,PI_OUTPUT);
-    gpioWrite(resetPowerDownPin,1);
+    if (resetPowerDownPin!=UNUSED_PIN) {
+        gpioSetMode(resetPowerDownPin, PI_OUTPUT);
+        gpioWrite(resetPowerDownPin, 1);
+    }
 	initSPI();
-#else
-	bcm_spi_init();
-#endif//PIGPIO
+
 } // End constructor
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -60,11 +58,7 @@ void CMFRC522::PCD_WriteRegister(	PCD_Register reg,	///< The register to write t
     char buf[2];
     buf[0]= reg;
     buf[1]= value;
-#ifdef PIGPIO
     spiWrite(_hSpi, buf, 2);
-#else
-    bcm2835_spi_transfern(buf,2);
-#endif//PIGPIO
 } // End PCD_WriteRegister()
 
 /**
@@ -75,19 +69,10 @@ void CMFRC522::PCD_WriteRegister(	PCD_Register reg,	///< The register to write t
 									uint8_t count,			///< The number of uint8_ts to write to the register
 									uint8_t *values		///< The values to write. uint8_t array.
 								) {
-    /*char temp;
-    spiXfer(_hSpi, (char *)&reg,&temp, 1);
-    char t[count];*/
     char buf[1];
     buf[0]=reg;
-
-#ifdef PIGPIO
     spiWrite(_hSpi,buf,1);
 	spiWrite(_hSpi, (char *)values, count);
-#else
-    bcm2835_spi_transfern(buf,1);
-    bcm2835_spi_transfern((char *)values, count);
-#endif//PIGPIO
 } // End PCD_WriteRegister()
 
 /**
@@ -96,20 +81,12 @@ void CMFRC522::PCD_WriteRegister(	PCD_Register reg,	///< The register to write t
  */
 uint8_t CMFRC522::PCD_ReadRegister(	PCD_Register reg	///< The register to read from. One of the PCD_Register enums.
 								) {
-
     char txBuf[2];
     txBuf[0]=(reg & 0x7E) | 0x80;
     txBuf[1]= 0;
-#ifdef PIGPIO
     char rxBuf[2];
     spiXfer(_hSpi, txBuf, rxBuf, 2);
     return rxBuf[1];
-
-#else
-    bcm2835_spi_transfern((char *)txBuf, 2);
-    return txBuf[1];
-#endif//PIGPIO
-
 } // End PCD_ReadRegister()
 
 /**
@@ -127,44 +104,28 @@ void CMFRC522::PCD_ReadRegister(	PCD_Register reg,	///< The register to read fro
 	size_t index = 0;							// Index in values array.
 	count--;							// One read is performed outside of the loop
     char buf[1]={address};
-#ifdef PIGPIO
+
     spiWrite(_hSpi,buf,1);
-#else
-    bcm2835_spi_transfern(buf, 1);
-#endif//PIGPIO
+
 	if (rxAlign) {		// Only update bit positions rxAlign..7 in values[0]
 		// Create bit mask for bit positions rxAlign..7
 		uint8_t mask = (0xFF << rxAlign) & 0xFF;
 		// Read value and tell that we want to read the same address again.
 		uint8_t value;
-		spiXfer(_hSpi,(char *)&address,(char *)&value,1);
+		spiXfer(_hSpi,buf,(char *)&value,1);
 		// Apply mask to both current value of values[0] and the new data in value.
 		*values = (*values & ~mask) | (value & mask);
 		index++;
 
 	}
-
     uint8_t i=index;
     while (i<count) {
         values[i]=address;
         i++;
     }
-
-        #ifdef PIGPIO
-        spiXfer(_hSpi,(char *)&address,(char *)(values+index),1=count);
-        #else
-        values[index]=address;
-        bcm2835_spi_transfern((char *)(values+index), count);
-        #endif//PIGPIO
-
-#ifdef PIGPIO
-    char buf[1]={0};
+    spiXfer(_hSpi,(char *)(values+index),(char *)(values+index),1);
+    buf[1]={0};
     spiXfer(_hSpi,buf,(char *)(values+count),1);
-#else
-    values[index]=0;
-    bcm2835_spi_transfern((char *)(values+count), 1);
-#endif//PIGPIO
-
 } // End PCD_ReadRegister()
 
 /**
@@ -247,11 +208,11 @@ void CMFRC522::PCD_Init() {
 		// First set the resetPowerDownPin as digital input, to check the CMFRC522 power down mode.
         gpioSetMode(_resetPowerDownPin, PI_INPUT);
 	
-		if (gpioRead(_resetPowerDownPin) == LOW) {	// The CMFRC522 chip is in power down mode.
+		if (gpioRead(_resetPowerDownPin) == PI_LOW) {	// The CMFRC522 chip is in power down mode.
 			gpioSetMode(_resetPowerDownPin, PI_OUTPUT);		// Now set the resetPowerDownPin as digital output.
-			gpioWrite(_resetPowerDownPin, LOW);		// Make sure we have a clean LOW state.
+			gpioWrite(_resetPowerDownPin, PI_LOW);		// Make sure we have a clean LOW state.
             std::this_thread::sleep_for(std::chrono::microseconds(2));	// 8.8.1 Reset timing requirements says about 100ns. Let us be generous: 2μsl
-			gpioWrite(_resetPowerDownPin, HIGH);		// Exit power down mode. This triggers a hard reset.
+			gpioWrite(_resetPowerDownPin, PI_HIGH);		// Exit power down mode. This triggers a hard reset.
 			// Section 8.8.2 in the datasheet says the oscillator start-up time is the start up time of the crystal + 37,74μs. Let us be generous: 50ms.
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
 			hardReset = true;
@@ -1992,24 +1953,7 @@ bool CMFRC522::PCD_PerformSelfTest() {
     return true;
 } // End PCD_PerformSelfTest()
 
-bool CMFRC522::bcm_spi_init(){
-    if (!bcm2835_init())
-    {
-        printf("failed!. Are you root??\n");
-        return true;
-    }
-    if (!bcm2835_spi_begin())
-    {
-        printf("failed! Are you root??\n");
-        return false;
-    }
-    bcm2835_spi_setBitOrder(BCM2835_SPI_BIT_ORDER_MSBFIRST);      //  default
-    bcm2835_spi_setDataMode(BCM2835_SPI_MODE0);                   // Sets the clock polariy and phase. CPOL = 0, CPHA = 0
-    bcm2835_spi_setClockDivider(BCM2835_SPI_CLOCK_DIVIDER_64 );   // 64 = 3.90625MHz on Rpi2, 6.250MHz on RPI3
-    bcm2835_spi_chipSelect(BCM2835_SPI_CS0);                      //  default
-    bcm2835_spi_setChipSelectPolarity(BCM2835_SPI_CS0, LOW);      //  default
-    return STATUS_OK;
-}
+
 
 /**
  * Returns true if a PICC responds to PICC_CMD_REQA.

@@ -365,7 +365,7 @@ protected:
 	uint8_t _resetPowerDownPin=UNUSED_PIN;	// Arduino pin connected to CMFRC522's reset and power down input (Pin 6, NRSTPD, active low)
     int32_t _hSpi; // Spi handle
     void initSPI();
-    bool bcm_spi_init();
+
     StatusCode MIFARE_TwoStepHelper(uint8_t command, uint8_t blockAddr, int32_t data);
 };
 
